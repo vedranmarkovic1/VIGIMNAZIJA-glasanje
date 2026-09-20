@@ -184,7 +184,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   <div className="bg-blue-50/70 rounded-xl p-4 border border-blue-200 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-xs font-bold uppercase tracking-wider text-blue-900">
-                        Odziv birača i verifikacija kvoruma:
+                        Odziv članova parlamenta i verifikacija kvoruma:
                       </div>
                       <div className="flex items-center gap-2">
                         {quorumMet ? (

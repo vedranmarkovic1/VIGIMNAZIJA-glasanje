@@ -277,7 +277,7 @@ export const PollProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Glasanje ne postoji.' };
       }
       if (poll.status !== 'active') {
-        return { success: false, error: 'Glasanje trenutno nije otvoreno za birače.' };
+        return { success: false, error: 'Glasanje trenutno nije otvoreno za članove parlamenta.' };
       }
       if (hasUserVoted(pollId, userId)) {
         return {

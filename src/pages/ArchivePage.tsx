@@ -58,7 +58,7 @@ export const ArchivePage: React.FC = () => {
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/80 text-blue-200 text-xs font-semibold border border-blue-700 mb-2">
             <FileText className="w-3.5 h-3.5 text-blue-300" />
-            <span>Zvanična evidencija i birački dnevnik</span>
+            <span>Zvanična evidencija i dnevnik članova parlamenta</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Arhiva glasanja i verifikacija učešća

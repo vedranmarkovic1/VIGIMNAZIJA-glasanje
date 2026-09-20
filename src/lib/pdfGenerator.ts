@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Poll, PollStatistics } from '../types';
+import { Poll, PollStatistics, User, UserVote } from '../types';
 
 interface PdfAssets {
   regularFont: string;
@@ -324,3 +324,213 @@ export const downloadOfficialPdfReport = async (
   const fileName = `Zapisnik_UP_Sesta_Gimnazija_${poll.id}.pdf`;
   doc.save(fileName);
 };
+
+export const downloadVotersPdfReport = async (
+  poll: Poll,
+  users: User[],
+  votes: UserVote[]
+) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const assets = await loadPdfAssets();
+  let fontName = 'helvetica';
+
+  if (assets) {
+    // Register Arial with full UTF-8 Unicode support for Serbian letters (Č, Ć, Ž, Đ, Š)
+    doc.addFileToVFS('Arial.ttf', assets.regularFont);
+    doc.addFont('Arial.ttf', 'Arial', 'normal');
+
+    doc.addFileToVFS('Arial-Bold.ttf', assets.boldFont);
+    doc.addFont('Arial-Bold.ttf', 'Arial', 'bold');
+
+    fontName = 'Arial';
+  }
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const protocolNumber = `UP-VI-${poll.id.replace(/[^0-9]/g, '').slice(-4) || '2026'}/09`;
+  const reportDate = new Date().toLocaleDateString('sr-RS');
+
+  // 1. Header with official circular logo
+  if (assets?.logo) {
+    try {
+      doc.addImage(`data:image/png;base64,${assets.logo}`, 'PNG', 15, 12, 18, 18);
+    } catch (e) {
+      console.warn('Could not render logo in PDF:', e);
+    }
+  }
+
+  const textLeftX = assets?.logo ? 36 : 15;
+
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(11, 34, 64);
+  doc.text('ŠESTA BEOGRADSKA GIMNAZIJA', textLeftX, 18);
+
+  doc.setFontSize(10);
+  doc.setTextColor(0, 75, 135);
+  doc.text('UČENIČKI PARLAMENT', textLeftX, 23.5);
+
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Ulica Milana Rakića 33, 11000 Beograd', textLeftX, 28.5);
+
+  // Right side protocol info
+  doc.setFontSize(8);
+  doc.setTextColor(60, 60, 60);
+  doc.text(`Delovodni broj: ${protocolNumber}`, pageWidth - 15, 18, { align: 'right' });
+  doc.text(`Datum: ${reportDate}`, pageWidth - 15, 23.5, { align: 'right' });
+
+  // Divider line
+  doc.setDrawColor(11, 34, 64);
+  doc.setLineWidth(0.6);
+  doc.line(15, 33, pageWidth - 15, 33);
+
+  // Title
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(12.5);
+  doc.setTextColor(11, 34, 64);
+  doc.text('IZVEŠTAJ GLASAČA', pageWidth / 2, 42, { align: 'center' });
+
+  // Agenda item / question
+  let currentY = 50;
+
+  if (poll.title) {
+    doc.setFont(fontName, 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(20, 20, 20);
+    const splitTitle = doc.splitTextToSize(`Tačka dnevnog reda: ${poll.title}`, pageWidth - 30);
+    doc.text(splitTitle, 15, currentY);
+    currentY += splitTitle.length * 4.5 + 1;
+  }
+
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(40, 40, 40);
+  const splitQuestion = doc.splitTextToSize(`Pitanje: „${poll.question}”`, pageWidth - 30);
+  doc.text(splitQuestion, 15, currentY);
+  currentY += splitQuestion.length * 4.5 + 4;
+
+  // Filter voters for this poll
+  const pollVotes = votes.filter((v) => v.poll_id === poll.id);
+  const voterIds = new Set(pollVotes.map((v) => v.user_id));
+  let votersList = users.filter((u) => voterIds.has(u.id));
+
+  // Fallback to all student delegates if poll has 0 recorded votes (e.g. attendance roll)
+  if (votersList.length === 0) {
+    votersList = users.filter((u) => u.role === 'student');
+  }
+
+  // Sort by class (I-1, I-2, ...), then by surname and name
+  votersList.sort((a, b) => {
+    const classA = a.grade_class || '';
+    const classB = b.grade_class || '';
+    const classCompare = classA.localeCompare(classB, 'sr', { numeric: true });
+    if (classCompare !== 0) return classCompare;
+    const surnameCompare = (a.surname || '').localeCompare(b.surname || '', 'sr');
+    if (surnameCompare !== 0) return surnameCompare;
+    return (a.name || '').localeCompare(b.name || '', 'sr');
+  });
+
+  const tableBody = votersList.map((voter, index) => [
+    (index + 1).toString(),
+    `${voter.name} ${voter.surname}`,
+    voter.grade_class || '—',
+    voter.phone || '—',
+    '', // Mesto za svojeručni potpis glasača
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['R. br.', 'Ime i prezime glasača', 'Odeljenje', 'Broj telefona', 'Potpis glasača']],
+    body: tableBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [0, 75, 135],
+      textColor: 255,
+      font: fontName,
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'center',
+    },
+    styles: {
+      font: fontName,
+      fontSize: 8,
+      cellPadding: 2,
+      minCellHeight: 7.5,
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 52, halign: 'left' },
+      2: { cellWidth: 26, halign: 'center' },
+      3: { cellWidth: 38, halign: 'center' },
+      4: { cellWidth: 'auto', halign: 'center' },
+    },
+    margin: { top: 20, bottom: 25, left: 15, right: 15 },
+  });
+
+  // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
+  let finalY = doc.lastAutoTable.finalY + 8;
+
+  // If near the bottom, add a new page for signatures
+  if (finalY > pageHeight - 35) {
+    doc.addPage();
+    finalY = 25;
+  }
+
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(50, 50, 50);
+  doc.text(`Ukupno evidentiranih glasača: ${votersList.length}`, 15, finalY);
+
+  finalY += 12;
+
+  // Bottom verification signatures
+  const colWidth = (pageWidth - 30) / 2;
+  const sig1X = 15 + colWidth / 2;
+  const sig2X = 15 + colWidth + colWidth / 2;
+
+  doc.setDrawColor(120, 120, 120);
+  doc.setLineWidth(0.3);
+
+  // Left signature: Predsednik
+  doc.line(sig1X - 28, finalY, sig1X + 28, finalY);
+  doc.setFontSize(7.5);
+  doc.setTextColor(110, 110, 110);
+  doc.text('(svojeručni potpis)', sig1X, finalY + 3.5, { align: 'center' });
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(20, 20, 20);
+  doc.text('Mihailo Savić', sig1X, finalY + 7.5, { align: 'center' });
+  doc.setFont(fontName, 'normal');
+  doc.text('Predsednik parlamenta', sig1X, finalY + 11, { align: 'center' });
+
+  // Right signature: Zapisničar
+  doc.line(sig2X - 28, finalY, sig2X + 28, finalY);
+  doc.setFontSize(7.5);
+  doc.setTextColor(110, 110, 110);
+  doc.text('(svojeručni potpis)', sig2X, finalY + 3.5, { align: 'center' });
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(20, 20, 20);
+  doc.text('Jelena Todorović', sig2X, finalY + 7.5, { align: 'center' });
+  doc.setFont(fontName, 'normal');
+  doc.text('Zapisničar', sig2X, finalY + 11, { align: 'center' });
+
+  // M.P. stamp placeholder
+  doc.setFontSize(8);
+  doc.setTextColor(130, 130, 130);
+  doc.text('M.P.', pageWidth / 2, finalY + 5, { align: 'center' });
+
+  // Direct download
+  const cleanId = poll.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-6) || 'sednica';
+  const fileName = `Spisak_Glasaca_UP_Sesta_Gimnazija_${cleanId}.pdf`;
+  doc.save(fileName);
+};
+

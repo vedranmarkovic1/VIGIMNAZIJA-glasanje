@@ -1,7 +1,9 @@
 import React from 'react';
 import { Poll, PollStatistics } from '../types';
-import { Download, X, Shield, FileCheck } from 'lucide-react';
-import { downloadOfficialPdfReport } from '../lib/pdfGenerator';
+import { Download, X, Shield, FileCheck, FileText } from 'lucide-react';
+import { downloadOfficialPdfReport, downloadVotersPdfReport } from '../lib/pdfGenerator';
+import { useAuth } from '../context/AuthContext';
+import { usePoll } from '../context/PollContext';
 
 interface OfficialPdfReportModalProps {
   poll: Poll;
@@ -16,10 +18,25 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { currentUser, users } = useAuth();
+  const { votes } = usePoll();
+
   if (!isOpen) return null;
+
+  const role = currentUser?.role;
+  const canDownloadVotersReport =
+    role === 'president' ||
+    role === 'vice_president_even' ||
+    role === 'vice_president_odd' ||
+    role === 'secretary' ||
+    role === 'support';
 
   const handleDownloadPdf = async () => {
     await downloadOfficialPdfReport(poll, stats, stats.registeredVoters);
+  };
+
+  const handleDownloadVotersPdf = async () => {
+    await downloadVotersPdfReport(poll, users, votes);
   };
 
   const formatDate = (isoString?: string | null) => {
@@ -53,6 +70,16 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
           </div>
           
           <div className="flex items-center gap-3">
+            {canDownloadVotersReport && (
+              <button
+                onClick={handleDownloadVotersPdf}
+                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all border border-slate-600"
+                title="Preuzmi spisak svih glasača sa brojevima telefona (PDF)"
+              >
+                <FileText className="w-4 h-4 text-blue-300" />
+                <span>Spisak glasača (PDF)</span>
+              </button>
+            )}
             <button
               onClick={handleDownloadPdf}
               className="flex items-center gap-2 bg-[#004b87] hover:bg-[#003560] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all border border-blue-400"
@@ -169,11 +196,11 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
           {/* Section 3: Kvorum i odziv birača */}
           <div className="mb-6 font-sans">
             <div className="bg-slate-100 px-3 py-1.5 font-bold text-xs uppercase tracking-wider text-slate-800 border-l-4 border-[#004b87] mb-3">
-              3. VERIFIKACIJA KVORUMA I ODZIV BIRAČA
+              3. VERIFIKACIJA KVORUMA I ODZIV ČLANOVA PARLAMENTA
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center mb-3">
               <div className="border border-slate-200 p-2.5 rounded bg-slate-50">
-                <div className="text-[11px] text-slate-500 uppercase font-semibold">Ukupno birača (Sistem)</div>
+                <div className="text-[11px] text-slate-500 uppercase font-semibold">Ukupno članova parlamenta (Sistem)</div>
                 <div className="text-lg font-bold text-slate-900">{stats.registeredVoters}</div>
               </div>
               <div className="border border-slate-200 p-2.5 rounded bg-slate-50">

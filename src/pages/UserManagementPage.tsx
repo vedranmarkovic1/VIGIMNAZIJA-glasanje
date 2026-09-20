@@ -139,13 +139,13 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({ onNaviga
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/80 text-blue-200 text-xs font-semibold border border-blue-700 mb-2">
             <Shield className="w-3.5 h-3.5 text-blue-300" />
-            <span>Administracija biračkog spiska e-Parlamenta</span>
+            <span>Administracija naloga članova e-Parlamenta</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Upravljanje nalozima i registracija učenika
           </h1>
           <p className="text-xs sm:text-sm text-blue-200 mt-1 max-w-2xl leading-relaxed">
-            Izdavanje novih verifikovanih naloga učenicima sa automatskim generisanjem privremenih lozinki i nadzor statusa aktivacije delegata.
+            UPRAVLJANJE NALOZIMA
           </p>
         </div>
 

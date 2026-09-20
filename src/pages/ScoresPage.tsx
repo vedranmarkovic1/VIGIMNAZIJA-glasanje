@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePoll } from '../context/PollContext';
 import { Poll } from '../types';
-import { downloadOfficialPdfReport } from '../lib/pdfGenerator';
+import { downloadOfficialPdfReport, downloadVotersPdfReport } from '../lib/pdfGenerator';
 import { OfficialPdfReportModal } from '../components/OfficialPdfReportModal';
 import {
   BarChart3,
@@ -22,7 +22,7 @@ import {
 
 export const ScoresPage: React.FC = () => {
   const { currentUser, users, onlineUsersCount } = useAuth();
-  const { polls, getPollStatistics } = usePoll();
+  const { polls, votes, getPollStatistics } = usePoll();
 
   const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
   const [previewPoll, setPreviewPoll] = useState<Poll | null>(null);
@@ -37,6 +37,7 @@ export const ScoresPage: React.FC = () => {
   const isSupport = role === 'support';
 
   const canAccess = isPresidentOrVice || isSecretary || isTeacherAdvisor || isSupport;
+  const canDownloadVotersReport = isPresidentOrVice || isSecretary || isSupport;
 
   if (!canAccess) {
     return (
@@ -86,6 +87,10 @@ export const ScoresPage: React.FC = () => {
     await downloadOfficialPdfReport(poll, stats, totalStudents);
   };
 
+  const handleDownloadVotersPdf = async (poll: Poll) => {
+    await downloadVotersPdfReport(poll, users, votes);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header Banner */}
@@ -96,10 +101,10 @@ export const ScoresPage: React.FC = () => {
             <span>Zvanična evidencija sednica i verifikacija odluka</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Rezultati glasanja i zvanični PDF zapisnici
+            REZULTATI I IZVEŠTAJI
           </h1>
           <p className="text-xs sm:text-sm text-blue-200 mt-1 max-w-2xl leading-relaxed">
-            Pregled svih zaključenih glasanja, verifikacija kvoruma (najmanje 50% registrovanih učenika) i direktno preuzimanje zvaničnih PDF izveštaja na Vaš uređaj.
+            ARHIVA GLASANJA
           </p>
         </div>
 
@@ -124,7 +129,7 @@ export const ScoresPage: React.FC = () => {
             <span>Završena glasanja ({closedPolls.length})</span>
           </h2>
           <div className="text-xs text-slate-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg">
-            Biračko telo: <strong>{totalStudents} učenika</strong> • Potreban kvorum (50%): <strong>{requiredQuorum} glasova</strong>
+            GLASAČI: <strong>{totalStudents} učenika</strong> • Potreban kvorum (50%): <strong>{requiredQuorum} glasova</strong>
           </div>
         </div>
 
@@ -210,7 +215,7 @@ export const ScoresPage: React.FC = () => {
                         <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-left">
                           <div className="text-[10px] uppercase font-bold text-slate-600 flex items-center gap-1">
                             <Users className="w-3 h-3 text-slate-500" />
-                            <span>Odziv birača:</span>
+                            <span>Odziv učenika:</span>
                           </div>
                           <div className="text-xs font-bold text-slate-900 mt-0.5">
                             {stats.totalVotes} glasova ({stats.turnoutPercentage}%)
@@ -230,6 +235,22 @@ export const ScoresPage: React.FC = () => {
                           <Download className="w-4 h-4" />
                           <span>Preuzmi PDF izveštaj</span>
                         </button>
+
+                        {/* Voters List PDF Button (President, Vice-presidents, Secretary, Support) */}
+                        {canDownloadVotersReport && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadVotersPdf(poll);
+                            }}
+                            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow transition-all hover:scale-105 active:scale-95 border border-slate-700"
+                            title="Preuzmi spisak svih glasača sa brojevima telefona (PDF)"
+                          >
+                            <FileText className="w-4 h-4 text-blue-300" />
+                            <span>Spisak glasača (PDF)</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -350,6 +371,17 @@ export const ScoresPage: React.FC = () => {
                           <Eye className="w-4 h-4 text-slate-500" />
                           <span>Pregledaj tekst zapisnika</span>
                         </button>
+
+                        {canDownloadVotersReport && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadVotersPdf(poll)}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow-md transition-all border border-slate-700"
+                          >
+                            <FileText className="w-4 h-4 text-blue-300" />
+                            <span>Preuzmi spisak glasača (PDF)</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
