@@ -78,9 +78,16 @@ export const CreateMultiplePollPage: React.FC<CreateMultiplePollPageProps> = ({ 
       return;
     }
 
-    const createdByName = `${currentUser.name} ${currentUser.surname} (${
-      currentUser.role === 'support' ? 'Korisnička podrška' : 'Predsednik'
-    })`;
+    const roleLabels: Record<string, string> = {
+      president: 'Predsednik',
+      vice_president_even: 'Zamenik za parnu smenu',
+      vice_president_odd: 'Zamenik za neparnu smenu',
+      secretary: 'Zapisničar',
+      support: 'Korisnička podrška',
+      teacher_advisor: 'Nastavnik-saradnik',
+      student: 'Učenik',
+    };
+    const createdByName = `${currentUser.name} ${currentUser.surname} (${roleLabels[currentUser.role] || currentUser.role})`;
 
     const poll = await createMultiplePoll(title, question, cleanOptions, currentUser.id, createdByName);
     setSuccessPollId(poll.id);

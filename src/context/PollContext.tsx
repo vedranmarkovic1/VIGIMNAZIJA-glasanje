@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Poll, UserVote, PollStatistics } from '../types';
-import { INITIAL_POLLS, INITIAL_VOTES } from '../data/mockSeed';
 import { supabase } from '../lib/supabase';
 
 interface PollContextType {
@@ -29,7 +28,7 @@ export const PollProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error(e);
       }
     }
-    return INITIAL_POLLS;
+    return [];
   });
 
   const [votes, setVotes] = useState<UserVote[]>(() => {
@@ -41,7 +40,7 @@ export const PollProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error(e);
       }
     }
-    return INITIAL_VOTES;
+    return [];
   });
 
   // Fetch polls and votes from Supabase
@@ -54,17 +53,8 @@ export const PollProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .order('created_at', { ascending: false });
 
       if (!pollsError && pollsData) {
-        if (pollsData.length > 0) {
-          setPolls(pollsData as Poll[]);
-          localStorage.setItem('parlament_polls', JSON.stringify(pollsData));
-        } else {
-          // Auto-seed initial polls to Supabase
-          const { error: seedPollsError } = await supabase.from('polls').insert(INITIAL_POLLS);
-          if (!seedPollsError) {
-            setPolls(INITIAL_POLLS);
-            localStorage.setItem('parlament_polls', JSON.stringify(INITIAL_POLLS));
-          }
-        }
+        setPolls(pollsData as Poll[]);
+        localStorage.setItem('parlament_polls', JSON.stringify(pollsData));
       }
 
       // 2. Fetch votes
@@ -74,17 +64,8 @@ export const PollProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .order('casted_at', { ascending: false });
 
       if (!votesError && votesData) {
-        if (votesData.length > 0) {
-          setVotes(votesData as UserVote[]);
-          localStorage.setItem('parlament_votes', JSON.stringify(votesData));
-        } else {
-          // Auto-seed initial votes to Supabase
-          const { error: seedVotesError } = await supabase.from('user_votes').insert(INITIAL_VOTES);
-          if (!seedVotesError) {
-            setVotes(INITIAL_VOTES);
-            localStorage.setItem('parlament_votes', JSON.stringify(INITIAL_VOTES));
-          }
-        }
+        setVotes(votesData as UserVote[]);
+        localStorage.setItem('parlament_votes', JSON.stringify(votesData));
       }
     } catch (err) {
       console.warn('Supabase fetch polls/votes failed, using local state:', err);

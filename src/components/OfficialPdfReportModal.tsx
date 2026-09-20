@@ -31,8 +31,21 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
     role === 'secretary' ||
     role === 'support';
 
+  const president = users.find((u) => u.role === 'president');
+  const secretary = users.find((u) => u.role === 'secretary');
+  const teacherAdvisor = users.find((u) => u.role === 'teacher_advisor');
+
+  const presidentName = president ? `${president.name} ${president.surname}` : 'Predsednik parlamenta';
+  const secretaryName = secretary ? `${secretary.name} ${secretary.surname}` : 'Zapisničar';
+  const teacherAdvisorName = teacherAdvisor ? `${teacherAdvisor.name} ${teacherAdvisor.surname}` : 'Nastavnik-saradnik';
+
+  const creatorUser = users.find((u) => u.id === poll.created_by);
+  const creatorDisplayName = creatorUser
+    ? `${creatorUser.name} ${creatorUser.surname}`
+    : (poll.created_by_name || 'Predsednik parlamenta');
+
   const handleDownloadPdf = async () => {
-    await downloadOfficialPdfReport(poll, stats, stats.registeredVoters);
+    await downloadOfficialPdfReport(poll, stats, stats.registeredVoters, users);
   };
 
   const handleDownloadVotersPdf = async () => {
@@ -158,7 +171,7 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
                 </tr>
                 <tr>
                   <td className="py-2 px-3 bg-slate-50 font-semibold text-slate-700">Predlagač / Pokretač:</td>
-                  <td className="py-2 px-3 text-slate-900">{poll.created_by_name}</td>
+                  <td className="py-2 px-3 text-slate-900">{creatorDisplayName}</td>
                 </tr>
               </tbody>
             </table>
@@ -299,7 +312,7 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
                 <div className="w-44 border-b-2 border-dashed border-slate-400 mb-2 pb-6">
                   <span className="text-[11px] font-medium text-slate-400 italic">(svojeručni potpis)</span>
                 </div>
-                <div className="font-bold text-slate-900 text-xs">Mihailo Savić</div>
+                <div className="font-bold text-slate-900 text-xs">{presidentName}</div>
                 <div className="text-slate-500 text-[11px]">Predsednik parlamenta</div>
               </div>
 
@@ -308,7 +321,7 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
                 <div className="w-44 border-b-2 border-dashed border-slate-400 mb-2 pb-6">
                   <span className="text-[11px] font-medium text-slate-400 italic">(svojeručni potpis)</span>
                 </div>
-                <div className="font-bold text-slate-900 text-xs">Jelena Todorović</div>
+                <div className="font-bold text-slate-900 text-xs">{secretaryName}</div>
                 <div className="text-slate-500 text-[11px]">Zapisničar</div>
               </div>
 
@@ -317,12 +330,12 @@ export const OfficialPdfReportModal: React.FC<OfficialPdfReportModalProps> = ({
                 <div className="w-44 border-b-2 border-dashed border-slate-400 mb-2 pb-6">
                   <span className="text-[11px] font-medium text-slate-400 italic">(svojeručni potpis)</span>
                 </div>
-                <div className="font-bold text-slate-900 text-xs">Prof. dr Branka Milić</div>
+                <div className="font-bold text-slate-900 text-xs">{teacherAdvisorName}</div>
                 <div className="text-slate-500 text-[11px]">Nastavnik-saradnik</div>
               </div>
             </div>
 
-            {/* Official Stamp & Verification seal note */}
+            {/* Verification note */}
             <div className="mt-10 flex items-center justify-between text-[10px] text-slate-500 pt-4 border-t border-slate-200">
               <div>
                 Elektronski overeno i arhivirano pod jedinstvenim ID: <span className="font-mono text-slate-700">{poll.id}</span>

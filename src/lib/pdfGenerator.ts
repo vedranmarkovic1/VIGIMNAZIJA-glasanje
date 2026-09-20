@@ -46,7 +46,8 @@ async function loadPdfAssets(): Promise<PdfAssets | null> {
 export const downloadOfficialPdfReport = async (
   poll: Poll,
   stats: PollStatistics,
-  totalStudents: number
+  totalStudents: number,
+  users: User[] = []
 ) => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -133,6 +134,20 @@ export const downloadOfficialPdfReport = async (
   doc.setTextColor(100, 100, 100);
   doc.text('Verifikovano putem zvaničnog informacionog sistema e-Parlament', pageWidth / 2, 46.5, { align: 'center' });
 
+  // Lookup dynamic officials from database users
+  const president = users.find((u) => u.role === 'president');
+  const secretary = users.find((u) => u.role === 'secretary');
+  const teacherAdvisor = users.find((u) => u.role === 'teacher_advisor');
+
+  const presidentName = president ? `${president.name} ${president.surname}` : '';
+  const secretaryName = secretary ? `${secretary.name} ${secretary.surname}` : '';
+  const teacherAdvisorName = teacherAdvisor ? `${teacherAdvisor.name} ${teacherAdvisor.surname}` : '';
+
+  const creatorUser = users.find((u) => u.id === poll.created_by);
+  const creatorDisplayName = creatorUser
+    ? `${creatorUser.name} ${creatorUser.surname}`
+    : (poll.created_by_name || 'Predsedništvo parlamenta');
+
   let currentY = 51;
 
   // SECTION 1: Opšte informacije o glasanju
@@ -143,7 +158,7 @@ export const downloadOfficialPdfReport = async (
       ['Naslov sednice / tačke dnevnog reda:', poll.title || 'Redovna tačka dnevnog reda'],
       ['Pitanje o kome se parlament izjašnjavao:', `"${poll.question}"`],
       ['Tip glasanja:', poll.type === 'classic' ? 'Klasično izjašnjavanje (ZA / PROTIV / UZDRŽAN/A)' : 'Višestruki izbor kandidata'],
-      ['Predlagač tačke:', poll.created_by_name || 'Predsednik parlamenta'],
+      ['Predlagač tačke:', creatorDisplayName],
     ],
     theme: 'grid',
     headStyles: {
@@ -282,7 +297,9 @@ export const downloadOfficialPdfReport = async (
   doc.text('(svojeručni potpis)', x1, currentY + 3.5, { align: 'center' });
   doc.setFont(fontName, 'bold');
   doc.setTextColor(20, 20, 20);
-  doc.text('Mihailo Savić', x1, currentY + 7.5, { align: 'center' });
+  if (presidentName) {
+    doc.text(presidentName, x1, currentY + 7.5, { align: 'center' });
+  }
   doc.setFont(fontName, 'normal');
   doc.text('Predsednik parlamenta', x1, currentY + 11, { align: 'center' });
 
@@ -294,7 +311,9 @@ export const downloadOfficialPdfReport = async (
   doc.text('(svojeručni potpis)', x2, currentY + 3.5, { align: 'center' });
   doc.setFont(fontName, 'bold');
   doc.setTextColor(20, 20, 20);
-  doc.text('Jelena Todorović', x2, currentY + 7.5, { align: 'center' });
+  if (secretaryName) {
+    doc.text(secretaryName, x2, currentY + 7.5, { align: 'center' });
+  }
   doc.setFont(fontName, 'normal');
   doc.text('Zapisničar', x2, currentY + 11, { align: 'center' });
 
@@ -306,18 +325,20 @@ export const downloadOfficialPdfReport = async (
   doc.text('(svojeručni potpis)', x3, currentY + 3.5, { align: 'center' });
   doc.setFont(fontName, 'bold');
   doc.setTextColor(20, 20, 20);
-  doc.text('Prof. dr Branka Milić', x3, currentY + 7.5, { align: 'center' });
+  if (teacherAdvisorName) {
+    doc.text(teacherAdvisorName, x3, currentY + 7.5, { align: 'center' });
+  }
   doc.setFont(fontName, 'normal');
   doc.text('Nastavnik-saradnik', x3, currentY + 11, { align: 'center' });
 
-  // Official Stamp placeholder
+  // Bottom line & Document ID (No M.P. - no stamp)
   currentY += 15;
   doc.setLineDashPattern([], 0);
   doc.setDrawColor(200, 200, 200);
   doc.line(15, currentY, pageWidth - 15, currentY);
   doc.setFontSize(7.5);
   doc.setTextColor(130, 130, 130);
-  doc.text('M.P. Zvanični pečat Šeste beogradske gimnazije', 15, currentY + 4);
+  doc.text('Zvanični elektronski zapisnik Učeničkog parlamenta', 15, currentY + 4);
   doc.text(`Identifikator glasanja: ${poll.id}`, pageWidth - 15, currentY + 4, { align: 'right' });
 
   // Direct download to user's device!
@@ -491,6 +512,13 @@ export const downloadVotersPdfReport = async (
 
   finalY += 12;
 
+  // Lookup dynamic officials from database users
+  const president = users.find((u) => u.role === 'president');
+  const secretary = users.find((u) => u.role === 'secretary');
+
+  const presidentName = president ? `${president.name} ${president.surname}` : '';
+  const secretaryName = secretary ? `${secretary.name} ${secretary.surname}` : '';
+
   // Bottom verification signatures
   const colWidth = (pageWidth - 30) / 2;
   const sig1X = 15 + colWidth / 2;
@@ -507,7 +535,9 @@ export const downloadVotersPdfReport = async (
   doc.setFont(fontName, 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(20, 20, 20);
-  doc.text('Mihailo Savić', sig1X, finalY + 7.5, { align: 'center' });
+  if (presidentName) {
+    doc.text(presidentName, sig1X, finalY + 7.5, { align: 'center' });
+  }
   doc.setFont(fontName, 'normal');
   doc.text('Predsednik parlamenta', sig1X, finalY + 11, { align: 'center' });
 
@@ -519,14 +549,11 @@ export const downloadVotersPdfReport = async (
   doc.setFont(fontName, 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(20, 20, 20);
-  doc.text('Jelena Todorović', sig2X, finalY + 7.5, { align: 'center' });
+  if (secretaryName) {
+    doc.text(secretaryName, sig2X, finalY + 7.5, { align: 'center' });
+  }
   doc.setFont(fontName, 'normal');
   doc.text('Zapisničar', sig2X, finalY + 11, { align: 'center' });
-
-  // M.P. stamp placeholder
-  doc.setFontSize(8);
-  doc.setTextColor(130, 130, 130);
-  doc.text('M.P.', pageWidth / 2, finalY + 5, { align: 'center' });
 
   // Direct download
   const cleanId = poll.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-6) || 'sednica';

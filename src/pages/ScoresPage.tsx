@@ -84,7 +84,7 @@ export const ScoresPage: React.FC = () => {
 
   const handleDownloadPdf = async (poll: Poll) => {
     const stats = getPollStatistics(poll.id, users.length, onlineUsersCount);
-    await downloadOfficialPdfReport(poll, stats, totalStudents);
+    await downloadOfficialPdfReport(poll, stats, totalStudents, users);
   };
 
   const handleDownloadVotersPdf = async (poll: Poll) => {
