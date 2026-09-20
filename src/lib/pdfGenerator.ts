@@ -635,7 +635,7 @@ export const downloadBulkCredentialsPdf = async (
   doc.setFont(fontName, 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(80, 80, 80);
-  const noteText = 'POVERLJIV DOKUMENT: Svaki učenik/delegat parlamenta obavezan je da pri prvoj prijavi u sistem promeni privremenu lozinku u trajnu ličnu lozinku.';
+  const noteText = 'POVERLJIV DOKUMENT: Svaki učenik parlamenta obavezan je da pri prvoj prijavi u sistem promeni privremenu lozinku u trajnu ličnu lozinku.';
   doc.text(noteText, pageWidth / 2, 47, { align: 'center' });
 
   // Sort created users by grade_class, then by surname and name

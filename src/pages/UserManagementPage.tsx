@@ -385,7 +385,7 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({ onNaviga
                   <span>Automatizovano kreiranje naloga</span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Preuzmite zvaničnu tabelu, unesite podatke o delegatima i učitajte fajl. Sistem će automatski uneti sve naloge u bazu i odmah generisati zvanični PDF izveštaj sa privremenim lozinkama.
+                  Preuzmite zvaničnu tabelu, unesite podatke o učenicima i učitajte fajl.
                 </p>
               </div>
 
