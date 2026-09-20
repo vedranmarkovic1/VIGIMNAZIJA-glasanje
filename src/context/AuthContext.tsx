@@ -16,6 +16,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   switchUser: (userId: string) => Promise<void>;
   registerStudent: (name: string, surname: string, phone?: string, gradeClass?: string) => Promise<{ user: User; tempPass: string }>;
+  registerStudentsBulk: (studentsData: Array<{ name: string; surname: string; phone?: string; grade_class?: string }>) => Promise<Array<{ user: User; tempPass: string }>>;
   updateUserRole: (userId: string, newRole: UserRole) => Promise<void>;
   deleteUser: (userId: string) => Promise<boolean>;
   resetUserPassword: (userId: string) => Promise<{ success: boolean; tempPassword?: string; error?: string }>;
@@ -263,6 +264,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { user: newUser, tempPass };
   };
 
+  const registerStudentsBulk = async (
+    studentsData: Array<{ name: string; surname: string; phone?: string; grade_class?: string }>
+  ): Promise<Array<{ user: User; tempPass: string }>> => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    const existingUsernames = new Set(users.map((u) => u.username));
+    const results: Array<{ user: User; tempPass: string }> = [];
+    const newUsers: User[] = [];
+
+    for (let index = 0; index < studentsData.length; index++) {
+      const student = studentsData[index];
+      const baseUsername = generateStudentUsername(student.name, student.surname);
+      let finalUsername = baseUsername;
+      let counter = 1;
+      while (existingUsernames.has(finalUsername)) {
+        finalUsername = `${baseUsername}${counter}`;
+        counter++;
+      }
+      existingUsernames.add(finalUsername);
+
+      let tempPass = 'Sesta2026!';
+      for (let i = 0; i < 4; i++) {
+        tempPass += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      const newUser: User = {
+        id: `usr-stud-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+        username: finalUsername,
+        password: tempPass,
+        temporary_password: tempPass,
+        name: student.name,
+        surname: student.surname,
+        phone: student.phone || '',
+        grade_class: student.grade_class || 'Odeljenje nespecificirano',
+        role: 'student',
+        status: 'must_change_password',
+        is_online: false,
+      };
+
+      newUsers.push(newUser);
+      results.push({ user: newUser, tempPass });
+    }
+
+    if (newUsers.length > 0) {
+      setUsers((prev) => [...newUsers, ...prev]);
+      try {
+        await supabase.from('users').insert(newUsers);
+      } catch (e) {
+        console.warn('Supabase bulk insert users failed', e);
+      }
+    }
+
+    return results;
+  };
+
   const deleteUser = async (userId: string): Promise<boolean> => {
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     if (currentUser && currentUser.id === userId) {
@@ -365,6 +420,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         switchUser,
         registerStudent,
+        registerStudentsBulk,
         updateUserRole,
         deleteUser,
         resetUserPassword,

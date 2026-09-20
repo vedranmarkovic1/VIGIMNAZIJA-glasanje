@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../context/AuthContext';
 import { User, UserRole } from '../types';
+import { downloadBulkCredentialsPdf } from '../lib/pdfGenerator';
 import {
   Users,
   UserPlus,
@@ -13,7 +15,13 @@ import {
   Search,
   RotateCcw,
   Trash2,
-  X
+  X,
+  FileSpreadsheet,
+  Upload,
+  Download,
+  CheckCircle2,
+  FileText,
+  Sparkles
 } from 'lucide-react';
 
 import { SCHOOL_CLASSES_BY_GRADE } from '../data/schoolClasses';
@@ -23,13 +31,32 @@ interface UserManagementPageProps {
 }
 
 export const UserManagementPage: React.FC<UserManagementPageProps> = ({ onNavigate }) => {
-  const { currentUser, users, registerStudent, updateUserRole, deleteUser, resetUserPassword } = useAuth();
+  const {
+    currentUser,
+    users,
+    registerStudent,
+    registerStudentsBulk,
+    updateUserRole,
+    deleteUser,
+    resetUserPassword
+  } = useAuth();
 
+  const [regMode, setRegMode] = useState<'single' | 'excel'>('excel');
+
+  // Single student registration state
   const [name, setName] = useState('');
   const [surname, setSurname] = useState('');
   const [phone, setPhone] = useState('');
   const [gradeClass, setGradeClass] = useState('I-1 — Društveno-jezički smer');
   const [error, setError] = useState('');
+
+  // Bulk Excel import state
+  const [parsedStudents, setParsedStudents] = useState<Array<{ name: string; surname: string; phone?: string; grade_class?: string }>>([]);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [excelError, setExcelError] = useState('');
+  const [bulkSuccessModal, setBulkSuccessModal] = useState<Array<{ user: User; tempPass: string }> | null>(null);
+  const [bulkCopied, setBulkCopied] = useState(false);
 
   // Success state holding newly generated credentials
   const [newlyCreated, setNewlyCreated] = useState<{ user: User; tempPass: string } | null>(null);
@@ -113,6 +140,165 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({ onNaviga
     setTimeout(() => setResetCopied(false), 3000);
   };
 
+  // Handler for parsing uploaded Excel file
+  const handleExcelFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setExcelError('');
+      setIsParsing(true);
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+
+      // Prefer sheet named "Spisak učenika" or first sheet
+      const sheetName =
+        workbook.SheetNames.find(
+          (s) => s.toLowerCase().includes('ucenik') || s.toLowerCase().includes('spisak')
+        ) || workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      if (!worksheet) {
+        setExcelError('Radni list u Excel fajlu nije pronađen.');
+        setIsParsing(false);
+        return;
+      }
+
+      const rows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+      if (!rows || rows.length === 0) {
+        setExcelError('Excel fajl je prazan.');
+        setIsParsing(false);
+        return;
+      }
+
+      // Locate header row containing 'ime' and 'prezime'
+      let headerRowIndex = -1;
+      let nameIdx = -1;
+      let surnameIdx = -1;
+      let phoneIdx = -1;
+      let classIdx = -1;
+
+      for (let r = 0; r < Math.min(rows.length, 15); r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+
+        const nIdx = row.findIndex(
+          (cell) => typeof cell === 'string' && cell.toLowerCase().trim() === 'ime'
+        );
+        const sIdx = row.findIndex(
+          (cell) => typeof cell === 'string' && cell.toLowerCase().trim() === 'prezime'
+        );
+
+        if (nIdx !== -1 && sIdx !== -1) {
+          headerRowIndex = r;
+          nameIdx = nIdx;
+          surnameIdx = sIdx;
+          phoneIdx = row.findIndex(
+            (cell) =>
+              typeof cell === 'string' &&
+              (cell.toLowerCase().includes('telefon') ||
+                cell.toLowerCase().includes('tel') ||
+                cell.toLowerCase().includes('broj'))
+          );
+          classIdx = row.findIndex(
+            (cell) =>
+              typeof cell === 'string' &&
+              (cell.toLowerCase().includes('odeljenj') ||
+                cell.toLowerCase().includes('smer') ||
+                cell.toLowerCase().includes('razred'))
+          );
+          break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        setExcelError('Nisu pronađene kolone "Ime" i "Prezime" u Excel tabeli.');
+        setIsParsing(false);
+        return;
+      }
+
+      const parsed: Array<{ name: string; surname: string; phone?: string; grade_class?: string }> = [];
+
+      for (let r = headerRowIndex + 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+
+        const rawName = row[nameIdx];
+        const rawSurname = row[surnameIdx];
+        const rawPhone = phoneIdx !== -1 ? row[phoneIdx] : '';
+        const rawClass = classIdx !== -1 ? row[classIdx] : '';
+
+        const studentName = rawName ? String(rawName).trim() : '';
+        const studentSurname = rawSurname ? String(rawSurname).trim() : '';
+        const studentPhone = rawPhone ? String(rawPhone).trim() : '';
+        const studentClass = rawClass ? String(rawClass).trim() : '';
+
+        if (
+          studentName &&
+          studentSurname &&
+          studentName.toLowerCase() !== 'ime' &&
+          studentSurname.toLowerCase() !== 'prezime'
+        ) {
+          parsed.push({
+            name: studentName,
+            surname: studentSurname,
+            phone: studentPhone,
+            grade_class: studentClass,
+          });
+        }
+      }
+
+      if (parsed.length === 0) {
+        setExcelError('Nisu pronađeni popunjeni podaci o učenicima u Excel tabeli.');
+      } else {
+        setParsedStudents(parsed);
+      }
+    } catch (err: any) {
+      console.error('Excel parse error:', err);
+      setExcelError('Greška pri čitanju Excel fajla: ' + (err?.message || 'Neispravan format.'));
+    } finally {
+      setIsParsing(false);
+      e.target.value = '';
+    }
+  };
+
+  // Handler for executing the bulk import and downloading credentials PDF
+  const handleExecuteBulkImport = async () => {
+    if (parsedStudents.length === 0) return;
+
+    try {
+      setIsImporting(true);
+      setExcelError('');
+
+      // 1. Bulk register in AuthContext & Supabase
+      const results = await registerStudentsBulk(parsedStudents);
+
+      // 2. Automatically generate and download the official PDF report with temporary passwords
+      await downloadBulkCredentialsPdf(results, users);
+
+      // 3. Show success modal with review and copy actions
+      setBulkSuccessModal(results);
+      setParsedStudents([]);
+    } catch (err: any) {
+      console.error('Bulk import error:', err);
+      setExcelError('Greška pri grupnom unosu u bazu: ' + (err?.message || 'Pokušajte ponovo.'));
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleCopyBulkCredentials = () => {
+    if (!bulkSuccessModal) return;
+    const lines = bulkSuccessModal.map(
+      (item, idx) =>
+        `${idx + 1}. ${item.user.name} ${item.user.surname} (${item.user.grade_class || '—'}) | Korisničko ime: ${item.user.username} | Privremena lozinka: ${item.tempPass}`
+    );
+    const text = `SPISAK KREIRANIH NALOGA ZA e-PARLAMENT (Šesta beogradska gimnazija)\nDatum: ${new Date().toLocaleDateString('sr-RS')}\nUkupno: ${bulkSuccessModal.length} učenika\n\n${lines.join('\n')}\n\nNapomena: Svaki učenik je dužan da pri prvoj prijavi promeni privremenu lozinku u ličnu trajnu lozinku.`;
+    navigator.clipboard.writeText(text);
+    setBulkCopied(true);
+    setTimeout(() => setBulkCopied(false), 3000);
+  };
+
   const handleConfirmDelete = async () => {
     if (!userToDelete) return;
     setDeleting(true);
@@ -159,159 +345,313 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({ onNaviga
         
         {/* REGISTRATION FORM (1 col) */}
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-[#004b87] to-[#0062b1] px-5 py-4 text-white flex items-center gap-2.5">
-            <UserPlus className="w-5 h-5 text-amber-300" />
-            <h2 className="font-bold text-sm sm:text-base">Registruj novog učenika</h2>
+          {/* Mode Switcher Tabs */}
+          <div className="bg-gradient-to-r from-[#004b87] to-[#0062b1] p-3 text-white">
+            <div className="grid grid-cols-2 gap-1.5 bg-black/20 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setRegMode('excel')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all ${
+                  regMode === 'excel'
+                    ? 'bg-white text-[#004b87] shadow'
+                    : 'text-blue-100 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Grupni unos (Excel)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegMode('single')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition-all ${
+                  regMode === 'single'
+                    ? 'bg-white text-[#004b87] shadow'
+                    : 'text-blue-100 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5 text-amber-400" />
+                <span>Pojedinačni unos</span>
+              </button>
+            </div>
           </div>
 
-          {newlyCreated ? (
-            /* SUCCESS CREDENTIALS DISPLAY */
-            <div className="p-6 space-y-4 animate-in fade-in">
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-center space-y-1">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
-                  <Check className="w-6 h-6" />
+          {regMode === 'excel' ? (
+            /* EXCEL BULK IMPORT MODE */
+            <div className="p-5 space-y-4">
+              {/* Informational Intro */}
+              <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1">
+                <div className="flex items-center gap-2 text-[#004b87] font-bold text-xs">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Automatizovano kreiranje naloga</span>
                 </div>
-                <h3 className="font-bold text-emerald-950 text-sm">Učenik je uspešno registrovan!</h3>
-                <p className="text-[11px] text-emerald-800">
-                  Prosledite sledeće pristupne podatke učeniku.
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Preuzmite zvaničnu tabelu, unesite podatke o delegatima i učitajte fajl. Sistem će automatski uneti sve naloge u bazu i odmah generisati zvanični PDF izveštaj sa privremenim lozinkama.
                 </p>
               </div>
 
-              <div className="bg-slate-50 border-2 border-dashed border-blue-300 rounded-xl p-4 space-y-2.5 text-xs">
-                <div>
-                  <span className="text-slate-500 font-semibold block text-[10px] uppercase">Ime i prezime:</span>
-                  <span className="font-bold text-slate-900 text-sm">
-                    {newlyCreated.user.name} {newlyCreated.user.surname}
+              {/* Step 1: Download Template */}
+              <div className="border border-slate-200 rounded-xl p-3.5 space-y-2.5 bg-slate-50/60">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-[#004b87] text-white flex items-center justify-center text-[10px] font-mono font-bold">1</span>
+                    Preuzmite Excel šablon
                   </span>
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">.xlsx format</span>
                 </div>
-
-                <div>
-                  <span className="text-slate-500 font-semibold block text-[10px] uppercase">Generisano korisničko ime:</span>
-                  <span className="font-mono font-bold text-blue-900 text-sm bg-blue-50 px-2 py-0.5 rounded border border-blue-200 inline-block">
-                    {newlyCreated.user.username}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-slate-500 font-semibold block text-[10px] uppercase">Privremena lozinka:</span>
-                  <span className="font-mono font-bold text-amber-900 text-sm bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">
-                    {newlyCreated.tempPass}
-                  </span>
-                </div>
-
-                <div className="pt-1 text-[11px] text-slate-500 italic">
-                  Status: <strong>Mora promeniti lozinku</strong> pri prvoj prijavi.
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  Zvanični šablon sadrži definisana polja za ime, prezime, telefon i odeljenje učenika.
+                </p>
+                <a
+                  href="/SPISAK%20UCENIKA-PARLAMENT.xlsx"
+                  download="SPISAK_UCENIKA_PARLAMENT.xlsx"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white hover:bg-slate-100 text-[#004b87] font-bold text-xs border border-blue-300 shadow-sm transition-all"
+                >
+                  <Download className="w-4 h-4 text-[#004b87]" />
+                  <span>Preuzmi SPISAK UCENIKA-PARLAMENT.xlsx</span>
+                </a>
               </div>
 
-              {/* Action buttons */}
-              <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleCopyCredentials}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#004b87] hover:bg-[#003865] text-white text-xs font-bold shadow transition-all"
-                >
-                  {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-                  <span>{copied ? 'Kopirano u privremenu memoriju!' : 'Kopiraj podatke za učenika'}</span>
-                </button>
+              {/* Step 2: Upload filled excel file */}
+              <div className="border border-slate-200 rounded-xl p-3.5 space-y-2.5 bg-slate-50/60">
+                <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-[#004b87] text-white flex items-center justify-center text-[10px] font-mono font-bold">2</span>
+                  Otpremite popunjen fajl
+                </span>
 
-                <button
-                  type="button"
-                  onClick={() => setNewlyCreated(null)}
-                  className="w-full py-2 px-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
-                >
-                  Registruj još jednog učenika
-                </button>
+                {excelError && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{excelError}</span>
+                  </div>
+                )}
+
+                <label className="border-2 border-dashed border-slate-300 hover:border-[#004b87] rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer bg-white transition-all group">
+                  <Upload className="w-6 h-6 text-slate-400 group-hover:text-[#004b87] transition-colors" />
+                  <div className="text-center">
+                    <div className="text-xs font-bold text-slate-700 group-hover:text-[#004b87]">
+                      {isParsing ? 'Učitavanje fajla...' : 'Izaberite ili prevucite Excel fajl'}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Podržani formati: .xlsx, .xls</div>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    disabled={isParsing || isImporting}
+                    onChange={handleExcelFileUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
-            </div>
-          ) : (
-            /* FORM */
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {error && (
-                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{error}</span>
+
+              {/* Step 3: Preview and Execute (if students parsed) */}
+              {parsedStudents.length > 0 && (
+                <div className="border-2 border-emerald-400 bg-emerald-50/50 rounded-xl p-4 space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Spremno za unos: {parsedStudents.length} učenika</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setParsedStudents([])}
+                      className="text-[11px] text-rose-600 hover:underline font-semibold"
+                    >
+                      Poništi
+                    </button>
+                  </div>
+
+                  {/* Preview list */}
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-emerald-200 bg-white p-2 space-y-1 text-xs">
+                    {parsedStudents.slice(0, 5).map((st, i) => (
+                      <div key={i} className="flex items-center justify-between py-1 px-2 rounded bg-slate-50 border border-slate-100 text-[11px]">
+                        <span className="font-semibold text-slate-800">
+                          {i + 1}. {st.name} {st.surname}
+                        </span>
+                        <span className="text-slate-500 font-mono text-[10px]">
+                          {st.grade_class || '—'}
+                        </span>
+                      </div>
+                    ))}
+                    {parsedStudents.length > 5 && (
+                      <div className="text-center text-[10px] text-slate-500 italic py-1">
+                        ...i još {parsedStudents.length - 5} učenika
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action button */}
+                  <button
+                    type="button"
+                    disabled={isImporting}
+                    onClick={handleExecuteBulkImport}
+                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isImporting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Unos naloga u bazu...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-4 h-4" />
+                        <span>Uvezi sve učenike i preuzmi PDF sa lozinkama</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
+            </div>
+          ) : (
+            /* SINGLE REGISTRATION MODE */
+            newlyCreated ? (
+              /* SUCCESS CREDENTIALS DISPLAY */
+              <div className="p-6 space-y-4 animate-in fade-in">
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-center space-y-1">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+                    <Check className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-bold text-emerald-950 text-sm">Učenik je uspešno registrovan!</h3>
+                  <p className="text-[11px] text-emerald-800">
+                    Prosledite sledeće pristupne podatke učeniku.
+                  </p>
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Ime učenika <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="npr. Nikola"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none"
-                  required
-                />
-              </div>
+                <div className="bg-slate-50 border-2 border-dashed border-blue-300 rounded-xl p-4 space-y-2.5 text-xs">
+                  <div>
+                    <span className="text-slate-500 font-semibold block text-[10px] uppercase">Ime i prezime:</span>
+                    <span className="font-bold text-slate-900 text-sm">
+                      {newlyCreated.user.name} {newlyCreated.user.surname}
+                    </span>
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Prezime učenika <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={surname}
-                  onChange={(e) => setSurname(e.target.value)}
-                  placeholder="npr. Jovanović"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none"
-                  required
-                />
-              </div>
+                  <div>
+                    <span className="text-slate-500 font-semibold block text-[10px] uppercase">Generisano korisničko ime:</span>
+                    <span className="font-mono font-bold text-blue-900 text-sm bg-blue-50 px-2 py-0.5 rounded border border-blue-200 inline-block">
+                      {newlyCreated.user.username}
+                    </span>
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Broj telefona <span className="text-slate-400 font-normal lowercase">(opciono)</span>
-                </label>
-                <div className="relative">
-                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="06X/XXX-XXXX"
-                    className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none"
-                  />
+                  <div>
+                    <span className="text-slate-500 font-semibold block text-[10px] uppercase">Privremena lozinka:</span>
+                    <span className="font-mono font-bold text-amber-900 text-sm bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-block">
+                      {newlyCreated.tempPass}
+                    </span>
+                  </div>
+
+                  <div className="pt-1 text-[11px] text-slate-500 italic">
+                    Status: <strong>Mora promeniti lozinku</strong> pri prvoj prijavi.
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyCredentials}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#004b87] hover:bg-[#003865] text-white text-xs font-bold shadow transition-all"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                    <span>{copied ? 'Kopirano u privremenu memoriju!' : 'Kopiraj podatke za učenika'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewlyCreated(null)}
+                    className="w-full py-2 px-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
+                  >
+                    Registruj još jednog učenika
+                  </button>
                 </div>
               </div>
+            ) : (
+              /* FORM */
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                {error && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Odeljenje i smer učenika <span className="text-slate-400 font-normal lowercase">(41 odeljenje)</span>
-                </label>
-                <select
-                  value={gradeClass}
-                  onChange={(e) => setGradeClass(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none bg-white font-medium"
-                >
-                  {SCHOOL_CLASSES_BY_GRADE.map((group) => (
-                    <optgroup key={group.gradeName} label={`${group.gradeName} (ukupno ${group.totalClasses} odeljenja)`}>
-                      {group.classes.map((cls) => (
-                        <option key={cls.code} value={`${cls.code} (${cls.track})`}>
-                          {cls.fullLabel}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Izaberite tačno odeljenje delegata prema zvaničnoj raspodeli Šeste beogradske gimnazije.
-                </p>
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Ime učenika <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="npr. Nikola"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none"
+                    required
+                  />
+                </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl bg-[#004b87] hover:bg-[#003865] text-white font-bold text-xs shadow transition-all flex items-center justify-center gap-2"
-                >
-                  <KeyRound className="w-4 h-4" />
-                  <span>Generiši nalog i privremenu lozinku</span>
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Prezime učenika <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={surname}
+                    onChange={(e) => setSurname(e.target.value)}
+                    placeholder="npr. Jovanović"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Broj telefona <span className="text-slate-400 font-normal lowercase">(opciono)</span>
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="06X/XXX-XXXX"
+                      className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Odeljenje i smer učenika <span className="text-slate-400 font-normal lowercase">(41 odeljenje)</span>
+                  </label>
+                  <select
+                    value={gradeClass}
+                    onChange={(e) => setGradeClass(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#004b87] focus:outline-none bg-white font-medium"
+                  >
+                    {SCHOOL_CLASSES_BY_GRADE.map((group) => (
+                      <optgroup key={group.gradeName} label={`${group.gradeName} (ukupno ${group.totalClasses} odeljenja)`}>
+                        {group.classes.map((cls) => (
+                          <option key={cls.code} value={`${cls.code} (${cls.track})`}>
+                            {cls.fullLabel}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Izaberite tačno odeljenje delegata prema zvaničnoj raspodeli Šeste beogradske gimnazije.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 px-4 rounded-xl bg-[#004b87] hover:bg-[#003865] text-white font-bold text-xs shadow transition-all flex items-center justify-center gap-2"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    <span>Generiši nalog i privremenu lozinku</span>
+                  </button>
+                </div>
+              </form>
+            )
           )}
         </div>
 
@@ -675,6 +1015,115 @@ export const UserManagementPage: React.FC<UserManagementPageProps> = ({ onNaviga
                   <span>{deleting ? 'Brisanje...' : 'Da, trajno obriši'}</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK IMPORT SUCCESS MODAL */}
+      {bulkSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-emerald-300 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-gradient-to-r from-[#004b87] to-[#0b2240] px-6 py-4 text-white flex items-center justify-between border-b-2 border-emerald-500 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center">
+                  <Check className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base">Grupni unos učenika je uspešno završen!</h3>
+                  <p className="text-[11px] text-blue-200">
+                    Kreirano je ukupno {bulkSuccessModal.length} novih naloga u sistemu
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBulkSuccessModal(null)}
+                className="text-slate-300 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                <div className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>PDF izveštaj sa privremenim lozinkama je automatski preuzet!</span>
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  Generisan je zvanični dokument sa podacima za prijavu i poljima za svojeručni potpis učenika o preuzimanju privremene lozinke.
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => downloadBulkCredentialsPdf(bulkSuccessModal, users)}
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#004b87] hover:bg-[#003865] text-white text-xs font-bold shadow transition-all"
+                >
+                  <Download className="w-4 h-4 text-amber-300" />
+                  <span>Preuzmi PDF ponovo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyBulkCredentials}
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold shadow-sm transition-all"
+                >
+                  {bulkCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-500" />}
+                  <span>{bulkCopied ? 'Kopirano u privremenu memoriju!' : 'Kopiraj sve podatke (tekst)'}</span>
+                </button>
+              </div>
+
+              {/* Credentials table preview */}
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Pregled kreiranih naloga ({bulkSuccessModal.length}):
+                </div>
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-3">R.br.</th>
+                        <th className="py-2 px-3">Učenik</th>
+                        <th className="py-2 px-3">Odeljenje</th>
+                        <th className="py-2 px-3">Korisničko ime</th>
+                        <th className="py-2 px-3">Privremena lozinka</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {bulkSuccessModal.map((item, idx) => (
+                        <tr key={item.user.id} className="hover:bg-blue-50/40">
+                          <td className="py-2 px-3 font-mono text-slate-400">{idx + 1}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-800">
+                            {item.user.name} {item.user.surname}
+                          </td>
+                          <td className="py-2 px-3 text-slate-500 text-[11px]">
+                            {item.user.grade_class || '—'}
+                          </td>
+                          <td className="py-2 px-3 font-mono font-bold text-blue-900 text-[11px]">
+                            {item.user.username}
+                          </td>
+                          <td className="py-2 px-3 font-mono font-bold text-amber-800 bg-amber-50/50 rounded text-[11px]">
+                            {item.tempPass}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setBulkSuccessModal(null)}
+                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl"
+              >
+                Zatvori
+              </button>
             </div>
           </div>
         </div>

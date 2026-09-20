@@ -561,3 +561,199 @@ export const downloadVotersPdfReport = async (
   doc.save(fileName);
 };
 
+export const downloadBulkCredentialsPdf = async (
+  createdUsers: Array<{ user: User; tempPass: string }>,
+  allUsers: User[] = []
+) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const assets = await loadPdfAssets();
+  let fontName = 'helvetica';
+
+  if (assets) {
+    doc.addFileToVFS('Arial.ttf', assets.regularFont);
+    doc.addFont('Arial.ttf', 'Arial', 'normal');
+
+    doc.addFileToVFS('Arial-Bold.ttf', assets.boldFont);
+    doc.addFont('Arial-Bold.ttf', 'Arial', 'bold');
+
+    fontName = 'Arial';
+  }
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const reportDate = new Date().toLocaleDateString('sr-RS');
+  const protocolNumber = `UP-NAL-${Date.now().toString().slice(-4)}/2026`;
+
+  // 1. Header with official circular logo
+  if (assets?.logo) {
+    try {
+      doc.addImage(`data:image/png;base64,${assets.logo}`, 'PNG', 15, 12, 18, 18);
+    } catch (e) {
+      console.warn('Could not render logo in PDF:', e);
+    }
+  }
+
+  const textLeftX = assets?.logo ? 36 : 15;
+
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(11, 34, 64);
+  doc.text('ŠESTA BEOGRADSKA GIMNAZIJA', textLeftX, 18);
+
+  doc.setFontSize(10);
+  doc.setTextColor(0, 75, 135);
+  doc.text('UČENIČKI PARLAMENT', textLeftX, 23.5);
+
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Ulica Milana Rakića 33, 11000 Beograd', textLeftX, 28.5);
+
+  // Right side info
+  doc.setFontSize(8);
+  doc.setTextColor(60, 60, 60);
+  doc.text(`Delovodni broj: ${protocolNumber}`, pageWidth - 15, 18, { align: 'right' });
+  doc.text(`Datum izdavanja: ${reportDate}`, pageWidth - 15, 23.5, { align: 'right' });
+
+  // Divider line
+  doc.setDrawColor(11, 34, 64);
+  doc.setLineWidth(0.6);
+  doc.line(15, 33, pageWidth - 15, 33);
+
+  // Document Title
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(11, 34, 64);
+  doc.text('SPISAK KREIRANIH NALOGA I PRIVREMENIH LOZINKI', pageWidth / 2, 42, { align: 'center' });
+
+  // Note on security & mandatory password change
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(80, 80, 80);
+  const noteText = 'POVERLJIV DOKUMENT: Svaki učenik/delegat parlamenta obavezan je da pri prvoj prijavi u sistem promeni privremenu lozinku u trajnu ličnu lozinku.';
+  doc.text(noteText, pageWidth / 2, 47, { align: 'center' });
+
+  // Sort created users by grade_class, then by surname and name
+  const sortedUsers = [...createdUsers].sort((a, b) => {
+    const classA = a.user.grade_class || '';
+    const classB = b.user.grade_class || '';
+    const classCompare = classA.localeCompare(classB, 'sr', { numeric: true });
+    if (classCompare !== 0) return classCompare;
+    const surnameCompare = (a.user.surname || '').localeCompare(b.user.surname || '', 'sr');
+    if (surnameCompare !== 0) return surnameCompare;
+    return (a.user.name || '').localeCompare(b.user.name || '', 'sr');
+  });
+
+  const tableBody = sortedUsers.map((item, index) => [
+    (index + 1).toString(),
+    `${item.user.name} ${item.user.surname}`,
+    item.user.grade_class || '—',
+    item.user.username,
+    item.tempPass,
+    item.user.phone || '—',
+    '', // Mesto za potpis o preuzimanju
+  ]);
+
+  autoTable(doc, {
+    startY: 52,
+    head: [['R. br.', 'Ime i prezime učenika', 'Odeljenje', 'Korisničko ime', 'Privremena lozinka', 'Broj telefona', 'Potpis o preuzimanju']],
+    body: tableBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [0, 75, 135],
+      textColor: 255,
+      font: fontName,
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'center',
+    },
+    styles: {
+      font: fontName,
+      fontSize: 7.5,
+      cellPadding: 2,
+      minCellHeight: 7,
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 38, halign: 'left' },
+      2: { cellWidth: 26, halign: 'center' },
+      3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+      4: { cellWidth: 28, halign: 'center', fontStyle: 'bold' },
+      5: { cellWidth: 24, halign: 'center' },
+      6: { cellWidth: 'auto', halign: 'center' },
+    },
+    margin: { top: 20, bottom: 25, left: 15, right: 15 },
+  });
+
+  // @ts-expect-error autoTable adds lastAutoTable to jsPDF instance
+  let finalY = doc.lastAutoTable.finalY + 8;
+
+  // If near the bottom, add a new page for signatures
+  if (finalY > pageHeight - 35) {
+    doc.addPage();
+    finalY = 25;
+  }
+
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(50, 50, 50);
+  doc.text(`Ukupno izdato naloga: ${createdUsers.length}`, 15, finalY);
+
+  finalY += 12;
+
+  // Lookup dynamic officials from database users
+  const president = allUsers.find((u) => u.role === 'president');
+  const secretary = allUsers.find((u) => u.role === 'secretary');
+
+  const presidentName = president ? `${president.name} ${president.surname}` : '';
+  const secretaryName = secretary ? `${secretary.name} ${secretary.surname}` : '';
+
+  // Bottom verification signatures
+  const colWidth = (pageWidth - 30) / 2;
+  const sig1X = 15 + colWidth / 2;
+  const sig2X = 15 + colWidth + colWidth / 2;
+
+  doc.setDrawColor(120, 120, 120);
+  doc.setLineWidth(0.3);
+
+  // Left signature: Predsednik
+  doc.line(sig1X - 28, finalY, sig1X + 28, finalY);
+  doc.setFontSize(7.5);
+  doc.setTextColor(110, 110, 110);
+  doc.text('(svojeručni potpis)', sig1X, finalY + 3.5, { align: 'center' });
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(20, 20, 20);
+  if (presidentName) {
+    doc.text(presidentName, sig1X, finalY + 7.5, { align: 'center' });
+  }
+  doc.setFont(fontName, 'normal');
+  doc.text('Predsednik parlamenta', sig1X, finalY + 11, { align: 'center' });
+
+  // Right signature: Zapisničar
+  doc.line(sig2X - 28, finalY, sig2X + 28, finalY);
+  doc.setFontSize(7.5);
+  doc.setTextColor(110, 110, 110);
+  doc.text('(svojeručni potpis)', sig2X, finalY + 3.5, { align: 'center' });
+  doc.setFont(fontName, 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(20, 20, 20);
+  if (secretaryName) {
+    doc.text(secretaryName, sig2X, finalY + 7.5, { align: 'center' });
+  }
+  doc.setFont(fontName, 'normal');
+  doc.text('Zapisničar', sig2X, finalY + 11, { align: 'center' });
+
+  // Direct download
+  const dateFormatted = new Date().toISOString().slice(0, 10);
+  const fileName = `Spisak_Privremenih_Lozinki_UP_Sesta_${dateFormatted}.pdf`;
+  doc.save(fileName);
+};
+
+
