@@ -1,4 +1,6 @@
-# Sistem elektronskog glasanja — Učenički parlament Šeste beogradske gimnazije
+# Sistem elektronskog glasanja — Učenički parlament Šeste beogradske gimnazije (eParlament VI gimnazija)
+
+🌐 **Zvanični portal uživo:** [https://eparlament.vercel.app](https://eparlament.vercel.app)
 
 Kompletna veb aplikacija za Učenički parlament **Šesta beogradska gimnazija** inspirisana dizajnerskim jezikom i standardima portala **e-Uprave Republike Srbije** (`euprava.gov.rs`).
 
