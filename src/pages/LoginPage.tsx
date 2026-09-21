@@ -56,9 +56,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <div className="mx-auto w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center mb-4 transition-transform hover:scale-105 duration-200">
             <img
               src="/parlament-logo.png"
-              alt="Učenički parlament - Šesta beogradska gimnazija"
+              alt="eParlament - Učenički parlament Šeste beogradske gimnazije (VI gimnazija)"
               className="w-full h-full object-contain drop-shadow-xl"
             />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-[#004b87] text-[11px] font-bold tracking-wide uppercase mb-2">
+            <span>eParlament • VI gimnazija</span>
           </div>
           <h1 className="text-2xl font-extrabold text-slate-950 tracking-tight">
             Šesta beogradska gimnazija
@@ -67,7 +70,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             Učenički parlament • Sistem elektronskog glasanja
           </p>
           <p className="text-xs text-slate-500 mt-2 max-w-sm mx-auto">
-            Zvanični portal Učeničkog parlamenta Šeste beogradske gimnazije
+            Zvanični portal eParlament za elektronsko glasanje učenika VI beogradske gimnazije
           </p>
         </div>
 
